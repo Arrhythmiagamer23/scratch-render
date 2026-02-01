@@ -8,6 +8,7 @@
   "repository": {
     "type": "git",
     "url": "git+ssh://git@github.com/PenguinMod/penguinmod-render.git"
+    "sha": "5e108ba3fc61878ccb8352dcfe1612530c788790"
   },
   "main": "./dist/node/scratch-render.js",
   "browser": "./src/index.js",
@@ -57,7 +58,8 @@
     "linebreak": "0.3.0",
     "minilog": "3.1.0",
     "raw-loader": "^0.5.1",
-    "scratch-svg-renderer": "git+https://github.com/PenguinMod/penguinmod-svg-renderer.git",
+    "scratch-svg-renderer": "git+https://github.com/Arrhythmiagamer23/penguinmod-svg-renderer.git",
+    "three": "^0.143.0",
     "twgl.js": "4.4.0"
   },
   "private": true
