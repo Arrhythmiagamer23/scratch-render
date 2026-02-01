@@ -5,6 +5,7 @@ const canvas = document.getElementById('scratch-stage');
 let fudge = 90;
 const renderer = new ScratchRender(canvas);
 renderer.setLayerGroupOrdering(['group1']);
+window.render = renderer;
 
 const drawableID = renderer.createDrawable('group1');
 renderer.updateDrawableProperties(drawableID, {
@@ -33,7 +34,7 @@ image.addEventListener('load', () => {
     }
 });
 image.crossOrigin = 'anonymous';
-image.src = 'https://cdn.assets.scratch.mit.edu/internalapi/asset/7e24c99c1b853e52f8e7f9004416fa34.png/get/';
+image.src = 'https://m.xiguacity.cn/user_projects_assets/9a8d068456c6e0cc5597342cb5ffcaad.png';
 
 // SVG (cat 1-a)
 const xhr = new XMLHttpRequest();
@@ -197,6 +198,11 @@ const drawStep = function () {
     requestAnimationFrame(drawStep);
 };
 drawStep();
+// renderer._gandiShaderManager.register('shake');
+// renderer._gandiShaderManager.effectors.get('shake').bypass = 0;
+
+renderer._gandiShaderManager.register('bloom');
+renderer._gandiShaderManager.effectors.get('bloom').bypass = 0;
 
 const debugCanvas = /** @type {canvas} */ document.getElementById('debug-canvas');
 renderer.setDebugCanvas(debugCanvas);
