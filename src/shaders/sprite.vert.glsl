@@ -26,6 +26,13 @@ uniform float u_horizontalShear;
 #ifdef ENABLE_vertical_shear
 uniform float u_verticalShear;
 #endif
+#ifdef ENABLE_nineSlice
+uniform vec2 u_nineSliceScale;
+uniform int u_nineSliceMode;
+#endif
+#ifdef ENABLE_tile
+uniform vec2 u_tileSize;
+#endif
 #endif
 
 attribute vec2 a_position;
