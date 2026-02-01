@@ -67,9 +67,186 @@ uniform sampler2D u_skin;
 varying vec2 v_texCoord;
 #endif
 
+#ifdef ENABLE_nineSlice
+uniform vec2 u_nineSliceScale;
+uniform vec4 u_nineSlicePadding;
+uniform int u_nineSliceMode; // 0: ignore, 1: stretch, 2: tile, 3: discard
+#endif
+
+#ifdef ENABLE_gaussianBlur
+uniform vec2 u_gaussianBlurSkinSize;
+#endif
+
+#ifdef ENABLE_tint
+uniform vec4 u_tintColor;
+#endif
+
+#ifdef ENABLE_tile
+uniform vec2 u_tileSize;
+#endif
+
+#ifdef ENABLE_clipBox
+uniform int u_clipBoxMode; // 0: ignore, 1: rectangle, 2: circle
+uniform vec4 u_clipBoxShape; // 1: rectangle: centerX, centerY, width, height; 2: circle: x, y, radius, unused
+uniform vec3 u_clipBoxStartEndAngle; // startAngle, endAngle, isSet
+#endif
+
 // Add this to divisors to prevent division by 0, which results in NaNs propagating through calculations.
 // Smaller values can cause problems on some mobile devices.
 const float epsilon = 1e-3;
+
+#if !defined(DRAW_MODE_silhouette) && (defined(ENABLE_color))
+// Branchless color conversions based on code from:
+// http://www.chilliant.com/rgb2hsv.html by Ian Taylor
+// Based in part on work by Sam Hocevar and Emil Persson
+// See also: https://en.wikipedia.org/wiki/HSL_and_HSV#Formal_derivation
+
+// Convert an RGB color to Hue, Saturation, and Value.
+// All components of input and output are expected to be in the [0,1] range.
+vec3 convertRGB2HSV(vec3 rgb) {
+	// Hue calculation has 3 cases, depending on which RGB component is largest, and one of those cases involves a "mod"
+	// operation. In order to avoid that "mod" we split the M==R case in two: one for G<B and one for B>G. The B>G case
+	// will be calculated in the negative and fed through abs() in the hue calculation at the end.
+	// See also: https://en.wikipedia.org/wiki/HSL_and_HSV#Hue_and_chroma
+	const vec4 hueOffsets = vec4(0.0, -1.0 / 3.0, 2.0 / 3.0, -1.0);
+
+	// temp1.xy = sort B & G (largest first)
+	// temp1.z = the hue offset we'll use if it turns out that R is the largest component (M==R)
+	// temp1.w = the hue offset we'll use if it turns out that R is not the largest component (M==G or M==B)
+	vec4 temp1 = rgb.b > rgb.g ? vec4(rgb.bg, hueOffsets.wz) : vec4(rgb.gb, hueOffsets.xy);
+
+	// temp2.x = the largest component of RGB ("M" / "Max")
+	// temp2.yw = the smaller components of RGB, ordered for the hue calculation (not necessarily sorted by magnitude!)
+	// temp2.z = the hue offset we'll use in the hue calculation
+	vec4 temp2 = rgb.r > temp1.x ? vec4(rgb.r, temp1.yzx) : vec4(temp1.xyw, rgb.r);
+
+	// m = the smallest component of RGB ("min")
+	float m = min(temp2.y, temp2.w);
+
+	// Chroma = M - m
+	float C = temp2.x - m;
+
+	// Value = M
+	float V = temp2.x;
+
+	return vec3(abs(temp2.z + (temp2.w - temp2.y) / (6.0 * C + epsilon)), // Hue
+	C / (temp2.x + epsilon), // Saturation
+	V); // Value
+}
+
+vec3 convertHue2RGB(float hue) {
+	float r = abs(hue * 6.0 - 3.0) - 1.0;
+	float g = 2.0 - abs(hue * 6.0 - 2.0);
+	float b = 2.0 - abs(hue * 6.0 - 4.0);
+	return clamp(vec3(r, g, b), 0.0, 1.0);
+}
+
+vec3 convertHSV2RGB(vec3 hsv) {
+	vec3 rgb = convertHue2RGB(hsv.x);
+	float c = hsv.z * hsv.y;
+	return rgb * c + hsv.z - c;
+}
+#endif // !defined(DRAW_MODE_silhouette) && (defined(ENABLE_color))
+
+const vec2 kCenter = vec2(0.5, 0.5);
+
+#ifdef ENABLE_nineSlice
+vec2 scale9Slice(vec2 texcoord, vec2 scale, vec4 padding, int mode) {
+	texcoord = texcoord * scale;
+
+	float left = padding.x;
+	float top = padding.y;
+	float right = padding.z;
+	float bottom = padding.w;
+	float xScaled = (scale.x - left - right) / (1.0 - left - right);
+	float yScaled = (scale.y - top - bottom) / (1.0 - top - bottom);
+
+	vec2 uv = texcoord;
+
+	if(texcoord.x <= left && texcoord.y <= top) {
+		// top left corner
+		// do nothing
+	} else if(texcoord.x >= scale.x - right && texcoord.y <= top) {
+		// right top corner
+		uv.x = 1.0 - (scale.x - texcoord.x);
+	} else if(texcoord.x <= left && texcoord.y >= scale.y - bottom) {
+		// bottom left corner
+		uv.y = 1.0 - (scale.y - texcoord.y);
+	} else if(texcoord.x >= scale.x - right && texcoord.y >= scale.y - bottom) {
+		// bottom right corner
+		uv = vec2(1.0 - (scale.x - texcoord.x), 1.0 - (scale.y - texcoord.y));
+	} else if(texcoord.x > left && texcoord.x < scale.x - right && (texcoord.y < top || texcoord.y > scale.y - bottom)) {
+		// between left and right on top or bottom
+		uv.x = fract((texcoord.x - left) / xScaled) + left;
+		if(texcoord.y < top) {
+			uv.y = uv.y;
+		} else {
+			uv.y = texcoord.y - scale.y + 1.0;
+		}
+	} else if(texcoord.y > top && texcoord.y < scale.y - bottom && (texcoord.x < left || texcoord.x > scale.x - right)) {
+		// bettween top and bottom on left or right
+		uv.y = fract((texcoord.y - top) / yScaled) + top;
+		if(texcoord.x < left) {
+			uv.x = uv.x;
+		} else {
+			uv.x = texcoord.x - scale.x + 1.0;
+		}
+	} else {
+		// center
+		if(mode == 1) {
+			// stretch
+			uv.x = fract((texcoord.x - left) / xScaled) + left;
+			uv.y = fract((texcoord.y - top) / yScaled) + top;
+		} else if(mode == 2) {
+			// tile
+			uv.x = mod(texcoord.x - left, 1.0 - left - right) + left;
+			uv.y = mod(texcoord.y - top, 1.0 - top - bottom) + top;
+		} else if(mode == 3) {
+			discard;
+		}
+	}
+	return uv;
+}
+#endif
+
+#ifdef ENABLE_gaussianBlur
+float normpdf(in float x, in float sigma) {
+	return 0.39894 * exp(-0.5 * x * x / (sigma * sigma)) / sigma;
+}
+
+vec4 blur(sampler2D image, vec2 uv) {
+	// declare stuff
+	const int mSize = 6;
+	const int kSize = (mSize - 1) / 2;
+	float kernel[mSize];
+	vec4 final_colour = vec4(0.0);
+
+	// create the 1-D kernel
+	float sigma = 7.0;
+	float Z = 0.0;
+	for(int j = 0; j <= kSize; ++j) {
+		kernel[kSize + j] = kernel[kSize - j] = normpdf(float(j), sigma);
+	}
+
+	// get the normalization factor (as the gaussian has been clamped)
+	for(int j = 0; j < mSize; ++j) {
+		Z += kernel[j];
+	}
+
+	// read out the texels
+	for(int i = -kSize; i <= kSize; ++i) {
+		for(int j = -kSize; j <= kSize; ++j) {
+			vec2 offset = uv + vec2(float(i), float(j)) / u_gaussianBlurSkinSize;
+			if(offset.x < 0.0 || offset.x > 1.0 || offset.y < 0.0 || offset.y > 1.0) {
+				continue;
+			}
+			final_colour += kernel[kSize + j] * kernel[kSize + i] * texture2D(image, offset);
+		}
+	}
+
+	return final_colour / (Z * Z);
+}
+#endif
 
 #if !defined(DRAW_MODE_silhouette) && (defined(ENABLE_color) || defined(ENABLE_saturation) || defined(ENABLE_tintColor))
 // Branchless color conversions based on code from:
