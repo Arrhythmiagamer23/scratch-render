@@ -61,7 +61,11 @@ class ShaderManager {
                 defines.push(`#define ENABLE_${ShaderManager.EFFECTS[index]}`);
             }
         }
-
+        for (const name in ShaderManager.EXTRA_EFFECT_INFO) {
+            if ((effectBits & ShaderManager.EXTRA_EFFECT_INFO[name].mask) !== 0) {
+                defines.push(`#define ENABLE_${name}`);
+            }
+        }
         const definesText = `${defines.join('\n')}\n`;
 
         /* eslint-disable global-require */
